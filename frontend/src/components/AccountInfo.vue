@@ -118,8 +118,9 @@ const equityPoints = computed(() => {
   // Generate 20 points for the mini chart
   for (let i = 0; i < 20; i++) {
     const x = (i / 19) * 200
-    const variation = Math.sin(i * 0.5) * 5 + (currentEquity - baseEquity) / baseEquity * 30
-    const y = 30 + variation
+    const equityRatio = baseEquity > 0 ? (currentEquity - baseEquity) / baseEquity : 0
+    const variation = Math.sin(i * 0.5) * 5 + equityRatio * 30
+    const y = Math.max(5, Math.min(55, 30 + variation))
     points.push(`${x},${y}`)
   }
   

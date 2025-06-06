@@ -111,15 +111,20 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useMarketStore } from '../stores/market'
 
 const marketStore = useMarketStore()
 
-const selectedSymbol = ref('EURUSD')
+const selectedSymbol = ref(marketStore.selectedSymbol)
 const tradeSize = ref(1.0)
 const leverage = ref(100)
 const tradeMessage = ref(null)
+
+// Watch for symbol changes and update store
+watch(selectedSymbol, (newSymbol) => {
+  marketStore.setSelectedSymbol(newSymbol)
+})
 
 const canTrade = computed(() => {
   return tradeSize.value > 0 && marketStore.account.free_margin > 0
@@ -127,25 +132,18 @@ const canTrade = computed(() => {
 
 const placeTrade = async (side) => {
   if (!canTrade.value) return
-  
+    
   const tradeData = {
     symbol: selectedSymbol.value,
     side: side,
     amount: tradeSize.value,
     leverage: leverage.value
   }
-  
+    
   try {
     const result = await marketStore.placeTrade(tradeData)
-    
-    if (result.success) {
-      marketStore.addPosition({
-        symbol: selectedSymbol.value,
-        side: side,
-        amount: tradeSize.value,
-        price: side === 'Buy' ? marketStore.currentPrice.ask : marketStore.currentPrice.bid
-      })
       
+    if (result.success) {
       tradeMessage.value = {
         type: 'success',
         text: `${side} order placed successfully`
@@ -156,13 +154,13 @@ const placeTrade = async (side) => {
         text: result.error
       }
     }
-  } catch (error) {
+  } catch {
     tradeMessage.value = {
       type: 'error',
       text: 'Failed to place trade'
     }
   }
-  
+    
   setTimeout(() => {
     tradeMessage.value = null
   }, 3000)

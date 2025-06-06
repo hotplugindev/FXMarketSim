@@ -7,7 +7,7 @@
       <div class="data-grid">
         <div class="data-item">
           <span class="label">Symbol:</span>
-          <span class="value">{{ marketStore.currentPrice.symbol }}</span>
+          <span class="value">{{ marketStore.selectedSymbol }}</span>
         </div>
         <div class="data-item">
           <span class="label">Bid:</span>
@@ -23,11 +23,11 @@
         </div>
         <div class="data-item">
           <span class="label">Volume:</span>
-          <span class="value">{{ formatVolume(marketStore.currentPrice.volume) }}</span>
+          <span class="value">{{ formatVolume(marketStore.currentPrice.volume || 0) }}</span>
         </div>
         <div class="data-item">
           <span class="label">Last Update:</span>
-          <span class="value">{{ formatTime(marketStore.currentPrice.timestamp) }}</span>
+          <span class="value">{{ formatTime(marketStore.currentPrice.timestamp || Date.now()) }}</span>
         </div>
       </div>
     </div>

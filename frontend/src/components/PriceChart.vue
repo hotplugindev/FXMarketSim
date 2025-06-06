@@ -1,7 +1,30 @@
 <template>
   <div class="price-chart">
     <div class="chart-header">
-      <h3>{{ marketStore.currentPrice.symbol }} Price Chart</h3>
+      <div class="chart-title">
+        <h3>{{ marketStore.selectedSymbol }} Price Chart</h3>
+        <div class="chart-controls">
+          <select v-model="selectedSymbol" @change="updateSymbol" class="symbol-selector">
+            <option value="EURUSD">EUR/USD</option>
+            <option value="GBPUSD">GBP/USD</option>
+            <option value="USDJPY">USD/JPY</option>
+          </select>
+          <div class="chart-type-selector">
+            <button
+              @click="setChartType('line')"
+              :class="['chart-type-btn', { active: marketStore.chartType === 'line' }]"
+            >
+              Line
+            </button>
+            <button
+              @click="setChartType('candlestick')"
+              :class="['chart-type-btn', { active: marketStore.chartType === 'candlestick' }]"
+            >
+              Candles
+            </button>
+          </div>
+        </div>
+      </div>
       <div class="timeframe-selector">
         <button
           v-for="tf in timeframes"
@@ -17,9 +40,14 @@
     <div class="chart-container">
       <div class="chart-canvas-wrapper">
         <Line
-          v-if="chartData"
+          v-if="chartData && marketStore.chartType === 'line'"
           :data="chartData"
           :options="chartOptions"
+        />
+        <canvas
+          v-else-if="marketStore.chartType === 'candlestick'"
+          ref="candlestickCanvas"
+          style="width: 100%; height: 100%; display: block;"
         />
       </div>
     </div>
@@ -37,14 +65,14 @@
       </div>
       <div class="stat-item">
         <span class="label">Volume:</span>
-        <span class="value">{{ formatVolume(marketStore.currentPrice.volume) }}</span>
+        <span class="value">{{ formatVolume(marketStore.currentPrice.volume || 0) }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -71,6 +99,11 @@ ChartJS.register(
 )
 
 const marketStore = useMarketStore()
+const selectedSymbol = ref(marketStore.selectedSymbol)
+const candlestickCanvas = ref(null)
+const candlestickChart = ref(null)
+const updateInterval = ref(null)
+const resizeObserver = ref(null)
 
 const timeframes = [
   { label: '1M', value: '1m' },
@@ -84,7 +117,7 @@ const timeframes = [
 const chartData = computed(() => {
   if (!marketStore.priceHistory.length) return null
   
-  const history = marketStore.priceHistory.slice(-100) // Last 100 points
+  const history = marketStore.priceHistory.slice(-100)
   
   return {
     labels: history.map(point => {
@@ -94,7 +127,7 @@ const chartData = computed(() => {
     datasets: [
       {
         label: 'Price',
-        data: history.map(point => point.price),
+        data: history.map(point => point.close),
         borderColor: '#00ff88',
         backgroundColor: 'rgba(0, 255, 136, 0.1)',
         borderWidth: 2,
@@ -169,27 +202,198 @@ const chartOptions = {
   }
 }
 
+const createCandlestickChart = () => {
+  console.log('Creating candlestick chart...')
+  console.log('Canvas ref:', candlestickCanvas.value)
+  console.log('Price history length:', marketStore.priceHistory.length)
+  console.log('Price history:', marketStore.priceHistory)
+  
+  if (!candlestickCanvas.value || !marketStore.priceHistory.length) {
+    console.log('Early return: missing canvas or history')
+    return
+  }
+  
+  const canvas = candlestickCanvas.value
+  const ctx = canvas.getContext('2d')
+  const history = marketStore.priceHistory.slice(-50) // Show last 50 candles
+  
+  if (history.length === 0) {
+    console.log('Early return: empty history after slice')
+    return
+  }
+  
+  console.log('Drawing candles for', history.length, 'data points')
+  
+  // Set canvas size properly
+  const rect = canvas.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  
+  canvas.width = rect.width * dpr
+  canvas.height = rect.height * dpr
+  
+  // Reset any existing transforms
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.scale(dpr, dpr)
+  
+  // Clear canvas
+  ctx.clearRect(0, 0, rect.width, rect.height)
+  
+  const width = rect.width
+  const height = rect.height
+  const padding = 40
+  const chartWidth = width - padding * 2
+  const chartHeight = height - padding * 2
+  
+  // Find min and max prices
+  let minPrice = Infinity
+  let maxPrice = -Infinity
+  
+  history.forEach(candle => {
+    minPrice = Math.min(minPrice, candle.low)
+    maxPrice = Math.max(maxPrice, candle.high)
+  })
+  
+  // Add some padding to price range
+  const priceRange = maxPrice - minPrice
+  minPrice -= priceRange * 0.1
+  maxPrice += priceRange * 0.1
+  const totalPriceRange = maxPrice - minPrice
+  
+  // Calculate candle width
+  const candleWidth = Math.max(2, chartWidth / history.length * 0.8)
+  const candleSpacing = chartWidth / history.length
+  
+  // Draw grid lines
+  ctx.strokeStyle = '#444'
+  ctx.lineWidth = 1
+  
+  // Horizontal grid lines
+  for (let i = 0; i <= 5; i++) {
+    const y = padding + (chartHeight / 5) * i
+    ctx.beginPath()
+    ctx.moveTo(padding, y)
+    ctx.lineTo(width - padding, y)
+    ctx.stroke()
+  }
+  
+  // Vertical grid lines
+  for (let i = 0; i <= 10; i++) {
+    const x = padding + (chartWidth / 10) * i
+    ctx.beginPath()
+    ctx.moveTo(x, padding)
+    ctx.lineTo(x, height - padding)
+    ctx.stroke()
+  }
+  
+  // Draw price labels
+  ctx.fillStyle = '#ccc'
+  ctx.font = '12px Arial'
+  ctx.textAlign = 'right'
+  
+  for (let i = 0; i <= 5; i++) {
+    const price = maxPrice - (totalPriceRange / 5) * i
+    const y = padding + (chartHeight / 5) * i
+    ctx.fillText(price.toFixed(5), width - padding - 5, y + 4)
+  }
+  
+  // Draw candlesticks
+  history.forEach((candle, index) => {
+    const x = padding + candleSpacing * index + candleSpacing / 2
+    
+    // Calculate y positions
+    const highY = padding + ((maxPrice - candle.high) / totalPriceRange) * chartHeight
+    const lowY = padding + ((maxPrice - candle.low) / totalPriceRange) * chartHeight
+    const openY = padding + ((maxPrice - candle.open) / totalPriceRange) * chartHeight
+    const closeY = padding + ((maxPrice - candle.close) / totalPriceRange) * chartHeight
+    
+    const isUp = candle.close >= candle.open
+    const color = isUp ? '#00ff88' : '#ff6b6b'
+    
+    // Draw wick (high-low line)
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(x, highY)
+    ctx.lineTo(x, lowY)
+    ctx.stroke()
+    
+    // Draw body (open-close rectangle)
+    const bodyTop = Math.min(openY, closeY)
+    const bodyHeight = Math.abs(closeY - openY)
+    
+    if (bodyHeight < 1) {
+      // Doji - draw horizontal line
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(x - candleWidth / 2, openY)
+      ctx.lineTo(x + candleWidth / 2, openY)
+      ctx.stroke()
+    } else {
+      if (isUp) {
+        // Bullish candle - hollow
+        ctx.strokeStyle = color
+        ctx.lineWidth = 1
+        ctx.strokeRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight)
+      } else {
+        // Bearish candle - filled
+        ctx.fillStyle = color
+        ctx.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight)
+      }
+    }
+  })
+  
+  // Draw time labels
+  ctx.fillStyle = '#ccc'
+  ctx.font = '10px Arial'
+  ctx.textAlign = 'center'
+  
+  const timeStep = Math.ceil(history.length / 8)
+  for (let i = 0; i < history.length; i += timeStep) {
+    const candle = history[i]
+    const x = padding + candleSpacing * i + candleSpacing / 2
+    const date = new Date(candle.timestamp * 1000)
+    const timeLabel = date.toLocaleTimeString().slice(0, 5)
+    ctx.fillText(timeLabel, x, height - padding + 15)
+  }
+}
+
+const updateCandlestickChart = () => {
+  createCandlestickChart()
+}
+
 const lastPrice = computed(() => {
   if (!marketStore.priceHistory.length) return 0
-  return marketStore.priceHistory[marketStore.priceHistory.length - 1]?.price || 0
+  return marketStore.priceHistory[marketStore.priceHistory.length - 1]?.close || 0
 })
 
 const priceChange = computed(() => {
   if (marketStore.priceHistory.length < 2) return 0
   const current = lastPrice.value
-  const previous = marketStore.priceHistory[marketStore.priceHistory.length - 2]?.price || current
+  const previous = marketStore.priceHistory[marketStore.priceHistory.length - 2]?.close || current
   return current - previous
 })
 
 const changePercent = computed(() => {
   if (marketStore.priceHistory.length < 2) return 0
-  const previous = marketStore.priceHistory[marketStore.priceHistory.length - 2]?.price || lastPrice.value
+  const previous = marketStore.priceHistory[marketStore.priceHistory.length - 2]?.close || lastPrice.value
   if (previous === 0) return 0
   return (priceChange.value / previous) * 100
 })
 
 const setTimeframe = (timeframe) => {
   marketStore.setTimeframe(timeframe)
+}
+
+const setChartType = (type) => {
+  marketStore.setChartType(type)
+  if (type === 'candlestick') {
+    nextTick(() => createCandlestickChart())
+  }
+}
+
+const updateSymbol = () => {
+  marketStore.setSelectedSymbol(selectedSymbol.value)
 }
 
 const formatVolume = (volume) => {
@@ -200,6 +404,71 @@ const formatVolume = (volume) => {
   }
   return volume.toFixed(0)
 }
+
+// Watchers
+watch(() => marketStore.selectedSymbol, (newSymbol) => {
+  selectedSymbol.value = newSymbol
+  if (marketStore.chartType === 'candlestick') {
+    nextTick(() => createCandlestickChart())
+  }
+})
+
+watch(() => marketStore.chartType, (newType) => {
+  if (newType === 'candlestick') {
+    nextTick(() => {
+      if (candlestickCanvas.value && !resizeObserver.value) {
+        resizeObserver.value = new ResizeObserver(() => {
+          if (marketStore.chartType === 'candlestick') {
+            createCandlestickChart()
+          }
+        })
+        resizeObserver.value.observe(candlestickCanvas.value.parentElement)
+      }
+      createCandlestickChart()
+    })
+  }
+})
+
+watch(() => marketStore.timeframe, () => {
+  if (marketStore.chartType === 'candlestick') {
+    nextTick(() => createCandlestickChart())
+  }
+})
+
+watch(() => marketStore.priceHistory, () => {
+  if (marketStore.chartType === 'candlestick' && candlestickChart.value) {
+    updateCandlestickChart()
+  }
+}, { deep: true })
+
+onMounted(() => {
+  updateInterval.value = setInterval(() => {
+    marketStore.fetchMarketData()
+  }, 1000)
+  
+  // Set up resize observer for canvas
+  if (candlestickCanvas.value) {
+    resizeObserver.value = new ResizeObserver(() => {
+      if (marketStore.chartType === 'candlestick') {
+        nextTick(() => createCandlestickChart())
+      }
+    })
+    resizeObserver.value.observe(candlestickCanvas.value.parentElement)
+  }
+  
+  if (marketStore.chartType === 'candlestick') {
+    nextTick(() => createCandlestickChart())
+  }
+})
+
+onUnmounted(() => {
+  if (updateInterval.value) {
+    clearInterval(updateInterval.value)
+  }
+  if (resizeObserver.value) {
+    resizeObserver.value.disconnect()
+  }
+})
 </script>
 
 <style scoped>
@@ -223,10 +492,63 @@ const formatVolume = (volume) => {
   gap: 1.5rem;
 }
 
-.chart-header h3 {
+.chart-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chart-title h3 {
   margin: 0;
   color: #00ff88;
   font-size: 1.4rem;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.symbol-selector {
+  padding: 0.5rem 0.75rem;
+  background: #1a1a1a;
+  border: 1px solid #555;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.symbol-selector:focus {
+  outline: none;
+  border-color: #00ff88;
+}
+
+.chart-type-selector {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.chart-type-btn {
+  padding: 0.5rem 0.75rem;
+  background: #1a1a1a;
+  border: 1px solid #555;
+  border-radius: 6px;
+  color: #ccc;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chart-type-btn:hover {
+  background: #333;
+  border-color: #777;
+}
+
+.chart-type-btn.active {
+  background: #00ff88;
+  color: #000;
+  border-color: #00ff88;
 }
 
 .timeframe-selector {
@@ -312,6 +634,15 @@ const formatVolume = (volume) => {
   .chart-header {
     flex-direction: column;
     align-items: stretch;
+  }
+  
+  .chart-title {
+    align-items: center;
+  }
+  
+  .chart-controls {
+    flex-direction: column;
+    gap: 0.5rem;
   }
   
   .timeframe-selector {

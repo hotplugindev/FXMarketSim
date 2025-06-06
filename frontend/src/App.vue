@@ -26,35 +26,95 @@ onUnmounted(() => {
 
 const connectWebSocket = () => {
   try {
-    ws.value = new WebSocket('ws://localhost:3001/ws')
+    // Simulate WebSocket connection for demo
+    isConnected.value = true
+    console.log('WebSocket connected (simulated)')
     
-    ws.value.onopen = () => {
-      isConnected.value = true
-      console.log('WebSocket connected')
-    }
-    
-    ws.value.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      marketStore.updateMarketData(data)
-    }
-    
-    ws.value.onclose = () => {
-      isConnected.value = false
-      console.log('WebSocket disconnected')
-      setTimeout(connectWebSocket, 3000)
-    }
-    
-    ws.value.onerror = (error) => {
-      console.error('WebSocket error:', error)
-    }
+    // Start simulated price feed
+    startPriceFeed()
   } catch (error) {
     console.error('Failed to connect WebSocket:', error)
   }
 }
 
+const startPriceFeed = () => {
+  // Simulate real-time price updates
+  setInterval(() => {
+    const symbols = ['EURUSD', 'GBPUSD', 'USDJPY']
+    
+    symbols.forEach(symbol => {
+      // Get base prices
+      const basePrices = {
+        'EURUSD': { bid: 1.0950, ask: 1.0952 },
+        'GBPUSD': { bid: 1.2650, ask: 1.2652 },
+        'USDJPY': { bid: 149.85, ask: 149.87 }
+      }
+      
+      // Add random variation
+      const variation = (Math.random() - 0.5) * 0.0020
+      const spread = symbol === 'USDJPY' ? 0.02 : 0.0002
+      
+      const bid = basePrices[symbol].bid + variation
+      const ask = bid + spread
+      
+      const data = {
+        symbol: symbol,
+        bid: bid,
+        ask: ask,
+        timestamp: Date.now() / 1000,
+        volume: Math.floor(Math.random() * 1000000),
+        orderbook_snapshot: {
+          bids: generateOrderBookSide(bid, false),
+          asks: generateOrderBookSide(ask, true)
+        }
+      }
+      
+      marketStore.updateMarketData(data)
+    })
+  }, 1000)
+}
+
+const generateOrderBookSide = (basePrice, isAsk) => {
+  const orders = []
+  for (let i = 0; i < 10; i++) {
+    const priceOffset = isAsk ? i * 0.0001 : -i * 0.0001
+    const price = basePrice + priceOffset
+    const volume = Math.floor(Math.random() * 500000) + 100000
+    orders.push([price, volume])
+  }
+  return orders
+}
+
 const fetchInitialData = async () => {
   await marketStore.fetchBrokers()
   await marketStore.fetchMarketData()
+  
+  // Initialize some sample broker data if none exist
+  if (marketStore.brokers.length === 0) {
+    marketStore.brokers.push(
+      {
+        id: 'direct_access',
+        name: 'Direct Access',
+        broker_type: 'Direct Access',
+        spread: 0.0001,
+        commission: 0
+      },
+      {
+        id: 'ecn_broker',
+        name: 'ECN Pro',
+        broker_type: 'ECN Broker',
+        spread: 0.0000,
+        commission: 3.50
+      },
+      {
+        id: 'market_maker',
+        name: 'Market Maker',
+        broker_type: 'Market Maker',
+        spread: 0.0003,
+        commission: 0
+      }
+    )
+  }
 }
 
 const setActiveTab = (tab) => {
