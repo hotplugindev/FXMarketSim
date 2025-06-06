@@ -1,0 +1,11 @@
+/home/hotplugin/GIT/FXMarketSim/backend/target/debug/deps/libbase64-addad3ff08056a03.rmeta: /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/lib.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/chunked_encoder.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/display.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/line_wrap.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/tables.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/encode.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/decode.rs
+
+/home/hotplugin/GIT/FXMarketSim/backend/target/debug/deps/base64-addad3ff08056a03.d: /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/lib.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/chunked_encoder.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/display.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/line_wrap.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/tables.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/encode.rs /home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/decode.rs
+
+/home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/lib.rs:
+/home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/chunked_encoder.rs:
+/home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/display.rs:
+/home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/line_wrap.rs:
+/home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/tables.rs:
+/home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/encode.rs:
+/home/hotplugin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/base64-0.9.3/src/decode.rs:
