@@ -58,9 +58,15 @@ setTimeout(async () => {
     const history = []
     let currentPrice = basePrice
     
-    // Generate 100 historical candles with more realistic OHLC data
+    // Generate 100 historical 1-minute candles with proper time alignment
+    const now = Date.now()
+    const minuteMs = 60 * 1000
+    
     for (let i = 0; i < 100; i++) {
-      const timestamp = Date.now() - (100 - i) * 60 * 1000 // 1 minute intervals
+      // Align timestamps to exact minute boundaries
+      const candleTime = now - (100 - i) * minuteMs
+      const alignedTime = Math.floor(candleTime / minuteMs) * minuteMs
+      const timestamp = Math.floor(alignedTime / 1000) // Convert to seconds
       
       // Create realistic price movement
       const variation = (Math.random() - 0.5) * 0.0010
@@ -74,7 +80,7 @@ setTimeout(async () => {
       currentPrice = close // Next candle starts where this one ends
       
       const candle = {
-        timestamp: timestamp / 1000,
+        timestamp: timestamp,
         open: Number(open.toFixed(symbol === 'USDJPY' ? 3 : 5)),
         high: Number(Math.max(open, high, close).toFixed(symbol === 'USDJPY' ? 3 : 5)),
         low: Number(Math.min(open, low, close).toFixed(symbol === 'USDJPY' ? 3 : 5)),
@@ -87,7 +93,9 @@ setTimeout(async () => {
     
     console.log(`Initialized ${symbol} with ${history.length} candles:`, history.slice(0, 3))
     marketStore.priceHistories[symbol]['1m'] = history
-    marketStore.aggregateTimeframes(symbol)
+    
+    // Generate higher timeframe candles from 1m data
+    marketStore.generateHigherTimeframes(symbol)
   })
   
   console.log('Initial market data loaded')

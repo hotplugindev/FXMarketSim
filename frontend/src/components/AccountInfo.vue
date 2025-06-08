@@ -207,16 +207,20 @@ const getAccountHealthText = () => {
 .balance-input-group {
   display: flex;
   gap: 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .form-control {
   flex: 1;
+  min-width: 0;
   padding: 0.75rem;
   background: #1a1a1a;
   border: 1px solid #555;
   border-radius: 6px;
   color: #fff;
   font-size: 1rem;
+  box-sizing: border-box;
 }
 
 .form-control:focus {
@@ -232,6 +236,8 @@ const getAccountHealthText = () => {
   font-size: 1rem;
   cursor: pointer;
   transition: all 0.2s ease;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .btn-set {

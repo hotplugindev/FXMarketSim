@@ -19,6 +19,12 @@ export const useMarketStore = defineStore('market', () => {
     'USDJPY': { '1m': [], '5m': [], '15m': [], '1h': [], '4h': [], '1d': [] }
   })
   
+  const lastCandleTimestamps = ref({
+    'EURUSD': {},
+    'GBPUSD': {},
+    'USDJPY': {}
+  })
+  
   const brokers = ref([])
   const selectedBroker = ref('direct_access')
   const timeframe = ref('1m')
@@ -87,32 +93,16 @@ export const useMarketStore = defineStore('market', () => {
       orderbook.value = data.orderbook_snapshot
     }
     
-    // Add to price history for all timeframes
-    const midPrice = (data.bid + data.ask) / 2
-    const pricePoint = {
-      timestamp: data.timestamp,
-      open: midPrice,
-      high: midPrice,
-      low: midPrice,
-      close: midPrice,
-      volume: data.volume
-    }
-    
-    // Add to 1m timeframe
+    // Initialize symbol data if needed
     if (!priceHistories.value[data.symbol]) {
       priceHistories.value[data.symbol] = { '1m': [], '5m': [], '15m': [], '1h': [], '4h': [], '1d': [] }
     }
-    
-    priceHistories.value[data.symbol]['1m'].push(pricePoint)
-    console.log(`Added price point to ${data.symbol}, total candles:`, priceHistories.value[data.symbol]['1m'].length)
-    
-    // Keep only last 1000 points for 1m
-    if (priceHistories.value[data.symbol]['1m'].length > 1000) {
-      priceHistories.value[data.symbol]['1m'].shift()
+    if (!lastCandleTimestamps.value[data.symbol]) {
+      lastCandleTimestamps.value[data.symbol] = {}
     }
     
-    // Aggregate for other timeframes
-    aggregateTimeframes(data.symbol)
+    // Update candles with real-time logic
+    updateCandleData(data.symbol, data.bid, data.ask, data.volume, data.timestamp)
     
     // Update positions with new prices
     updatePositionPrices()
@@ -280,39 +270,103 @@ export const useMarketStore = defineStore('market', () => {
     updateAccountInfo()
   }
   
+  const updateCandleData = (symbol, bid, ask, volume, timestamp) => {
+    const midPrice = (bid + ask) / 2
+    const timeframes = {
+      '1m': 60,
+      '5m': 300,
+      '15m': 900,
+      '1h': 3600,
+      '4h': 14400,
+      '1d': 86400
+    }
+    
+    Object.entries(timeframes).forEach(([tf, seconds]) => {
+      // Round timestamp to the timeframe interval
+      const roundedTimestamp = Math.floor(timestamp / seconds) * seconds
+      
+      // Get the last candle for this timeframe
+      const tfData = priceHistories.value[symbol][tf]
+      let lastCandle = tfData[tfData.length - 1]
+      
+      if (!lastCandle || lastCandle.timestamp !== roundedTimestamp) {
+        // Create new candle
+        const newCandle = {
+          timestamp: roundedTimestamp,
+          open: midPrice,
+          high: midPrice,
+          low: midPrice,
+          close: midPrice,
+          volume: volume
+        }
+        tfData.push(newCandle)
+        
+        // Keep only last 1000 candles for 1m, 500 for others
+        const maxCandles = tf === '1m' ? 1000 : 500
+        if (tfData.length > maxCandles) {
+          tfData.shift()
+        }
+        
+        lastCandleTimestamps.value[symbol][tf] = roundedTimestamp
+        console.log(`New ${tf} candle for ${symbol} at ${new Date(roundedTimestamp * 1000).toLocaleTimeString()}`)
+      } else {
+        // Update existing candle
+        lastCandle.high = Math.max(lastCandle.high, midPrice)
+        lastCandle.low = Math.min(lastCandle.low, midPrice)
+        lastCandle.close = midPrice
+        lastCandle.volume += volume
+      }
+    })
+  }
+  
   const aggregateTimeframes = (symbol) => {
+    // This function is now replaced by updateCandleData for real-time updates
+    // Keeping for backward compatibility but functionality moved to updateCandleData
+  }
+  
+  const generateHigherTimeframes = (symbol) => {
     const oneMinData = priceHistories.value[symbol]['1m']
     if (oneMinData.length === 0) return
     
-    // Aggregate to higher timeframes
     const timeframes = {
-      '5m': 5,
-      '15m': 15,
-      '1h': 60,
-      '4h': 240,
-      '1d': 1440
+      '5m': 300,
+      '15m': 900,
+      '1h': 3600,
+      '4h': 14400,
+      '1d': 86400
     }
     
-    Object.entries(timeframes).forEach(([tf, minutes]) => {
+    Object.entries(timeframes).forEach(([tf, seconds]) => {
       const aggregated = []
-      const chunkSize = minutes
       
-      for (let i = 0; i < oneMinData.length; i += chunkSize) {
-        const chunk = oneMinData.slice(i, i + chunkSize)
-        if (chunk.length > 0) {
-          const candle = {
-            timestamp: chunk[0].timestamp,
-            open: chunk[0].open,
-            high: Math.max(...chunk.map(c => c.high)),
-            low: Math.min(...chunk.map(c => c.low)),
-            close: chunk[chunk.length - 1].close,
-            volume: chunk.reduce((sum, c) => sum + c.volume, 0)
-          }
-          aggregated.push(candle)
+      // Group candles by time boundaries
+      const groups = {}
+      oneMinData.forEach(candle => {
+        const boundary = Math.floor(candle.timestamp / seconds) * seconds
+        if (!groups[boundary]) {
+          groups[boundary] = []
         }
-      }
+        groups[boundary].push(candle)
+      })
       
-      priceHistories.value[symbol][tf] = aggregated.slice(-200) // Keep last 200 candles
+      // Create aggregated candles
+      Object.entries(groups).forEach(([timestamp, candles]) => {
+        if (candles.length > 0) {
+          const aggregatedCandle = {
+            timestamp: parseInt(timestamp),
+            open: candles[0].open,
+            high: Math.max(...candles.map(c => c.high)),
+            low: Math.min(...candles.map(c => c.low)),
+            close: candles[candles.length - 1].close,
+            volume: candles.reduce((sum, c) => sum + c.volume, 0)
+          }
+          aggregated.push(aggregatedCandle)
+        }
+      })
+      
+      // Sort by timestamp and store
+      priceHistories.value[symbol][tf] = aggregated.sort((a, b) => a.timestamp - b.timestamp)
+      console.log(`Generated ${aggregated.length} ${tf} candles for ${symbol}`)
     })
   }
   
@@ -322,6 +376,7 @@ export const useMarketStore = defineStore('market', () => {
     chartType,
     marketPrices,
     priceHistories,
+    lastCandleTimestamps,
     brokers,
     selectedBroker,
     timeframe,
@@ -340,6 +395,7 @@ export const useMarketStore = defineStore('market', () => {
     
     // Actions
     updateMarketData,
+    updateCandleData,
     fetchBrokers,
     fetchMarketData,
     placeTrade,
@@ -352,6 +408,7 @@ export const useMarketStore = defineStore('market', () => {
     addPosition,
     closePosition,
     updatePositionPrices,
-    aggregateTimeframes
+    aggregateTimeframes,
+    generateHigherTimeframes
   }
 })

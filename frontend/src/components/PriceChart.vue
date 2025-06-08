@@ -122,7 +122,14 @@ const chartData = computed(() => {
   return {
     labels: history.map(point => {
       const date = new Date(point.timestamp * 1000)
-      return date.toLocaleTimeString()
+      // Format time based on timeframe
+      if (marketStore.timeframe === '1d') {
+        return date.toLocaleDateString()
+      } else if (marketStore.timeframe === '4h' || marketStore.timeframe === '1h') {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      } else {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
     }),
     datasets: [
       {
@@ -353,7 +360,17 @@ const createCandlestickChart = () => {
     const candle = history[i]
     const x = padding + candleSpacing * i + candleSpacing / 2
     const date = new Date(candle.timestamp * 1000)
-    const timeLabel = date.toLocaleTimeString().slice(0, 5)
+    
+    // Format time label based on timeframe
+    let timeLabel
+    if (marketStore.timeframe === '1d') {
+      timeLabel = date.toLocaleDateString()
+    } else if (marketStore.timeframe === '4h' || marketStore.timeframe === '1h') {
+      timeLabel = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    } else {
+      timeLabel = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+    
     ctx.fillText(timeLabel, x, height - padding + 15)
   }
 }
@@ -436,8 +453,15 @@ watch(() => marketStore.timeframe, () => {
 })
 
 watch(() => marketStore.priceHistory, () => {
-  if (marketStore.chartType === 'candlestick' && candlestickChart.value) {
-    updateCandlestickChart()
+  if (marketStore.chartType === 'candlestick') {
+    nextTick(() => createCandlestickChart())
+  }
+}, { deep: true })
+
+// Also watch for price history changes by timeframe
+watch(() => [marketStore.priceHistory, marketStore.selectedSymbol, marketStore.timeframe], () => {
+  if (marketStore.chartType === 'candlestick') {
+    nextTick(() => createCandlestickChart())
   }
 }, { deep: true })
 
