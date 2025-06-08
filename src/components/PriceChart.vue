@@ -471,10 +471,8 @@ watch(() => [marketStore.priceHistory, marketStore.selectedSymbol, marketStore.t
 }, { deep: true })
 
 onMounted(() => {
-  updateInterval.value = setInterval(() => {
-    marketStore.fetchMarketData()
-  }, 1000)
-  
+  // No need to fetchMarketData, simulation updates are automatic
+
   // Set up resize observer for canvas
   if (candlestickCanvas.value) {
     resizeObserver.value = new ResizeObserver(() => {

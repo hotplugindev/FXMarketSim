@@ -11,15 +11,15 @@
         </div>
         <div class="data-item">
           <span class="label">Bid:</span>
-          <span class="value bid">{{ marketStore.currentPrice.bid.toFixed(5) }}</span>
+          <span class="value bid">{{ (typeof marketStore.currentPrice.bid === 'number' ? marketStore.currentPrice.bid : 0).toFixed(5) }}</span>
         </div>
         <div class="data-item">
           <span class="label">Ask:</span>
-          <span class="value ask">{{ marketStore.currentPrice.ask.toFixed(5) }}</span>
+          <span class="value ask">{{ (typeof marketStore.currentPrice.ask === 'number' ? marketStore.currentPrice.ask : 0).toFixed(5) }}</span>
         </div>
         <div class="data-item">
           <span class="label">Spread:</span>
-          <span class="value">{{ marketStore.currentSpread.toFixed(5) }}</span>
+          <span class="value">{{ (typeof marketStore.currentSpread === 'number' ? marketStore.currentSpread : 0).toFixed(5) }}</span>
         </div>
         <div class="data-item">
           <span class="label">Volume:</span>
@@ -37,23 +37,23 @@
       <div class="data-grid">
         <div class="data-item">
           <span class="label">Total Volume:</span>
-          <span class="value">{{ formatVolume(marketStore.marketStats.total_volume) }}</span>
+          <span class="value">{{ formatVolume(marketStore.marketStats?.total_volume ?? 0) }}</span>
         </div>
         <div class="data-item">
           <span class="label">Total Trades:</span>
-          <span class="value">{{ marketStore.marketStats.total_trades.toLocaleString() }}</span>
+          <span class="value">{{ (marketStore.marketStats?.total_trades ?? 0).toLocaleString() }}</span>
         </div>
         <div class="data-item">
           <span class="label">Active Participants:</span>
-          <span class="value">{{ marketStore.marketStats.active_participants.toLocaleString() }}</span>
+          <span class="value">{{ (marketStore.marketStats?.active_participants ?? 0).toLocaleString() }}</span>
         </div>
         <div class="data-item">
           <span class="label">Liquidity Index:</span>
-          <span class="value">{{ marketStore.marketStats.liquidity_index.toFixed(2) }}</span>
+          <span class="value">{{ (typeof marketStore.marketStats?.liquidity_index === 'number' ? marketStore.marketStats.liquidity_index : 0).toFixed(2) }}</span>
         </div>
         <div class="data-item">
           <span class="label">Volatility:</span>
-          <span class="value">{{ (marketStore.marketStats.volatility * 100).toFixed(4) }}%</span>
+          <span class="value">{{ (typeof marketStore.marketStats?.volatility === 'number' ? (marketStore.marketStats.volatility * 100) : 0).toFixed(4) }}%</span>
         </div>
       </div>
     </div>
@@ -64,13 +64,13 @@
         <div class="summary-item">
           <span class="label">Best Bid:</span>
           <span class="value bid">
-            {{ bestBid ? bestBid.toFixed(5) : 'N/A' }}
+            {{ (typeof bestBid === 'number' ? bestBid.toFixed(5) : 'N/A') }}
           </span>
         </div>
         <div class="summary-item">
           <span class="label">Best Ask:</span>
           <span class="value ask">
-            {{ bestAsk ? bestAsk.toFixed(5) : 'N/A' }}
+            {{ (typeof bestAsk === 'number' ? bestAsk.toFixed(5) : 'N/A') }}
           </span>
         </div>
         <div class="summary-item">
@@ -117,21 +117,25 @@ import { useMarketStore } from '../stores/market'
 const marketStore = useMarketStore()
 
 const bestBid = computed(() => {
-  if (!marketStore.orderbook.bids.length) return null
-  return Math.max(...marketStore.orderbook.bids.map(bid => bid[0]))
+  const bids = marketStore.orderbook?.bids || []
+  if (!bids.length) return null
+  return Math.max(...bids.map(bid => bid[0]))
 })
 
 const bestAsk = computed(() => {
-  if (!marketStore.orderbook.asks.length) return null
-  return Math.min(...marketStore.orderbook.asks.map(ask => ask[0]))
+  const asks = marketStore.orderbook?.asks || []
+  if (!asks.length) return null
+  return Math.min(...asks.map(ask => ask[0]))
 })
 
 const totalBidVolume = computed(() => {
-  return marketStore.orderbook.bids.reduce((total, bid) => total + bid[1], 0)
+  const bids = marketStore.orderbook?.bids || []
+  return bids.reduce((total, bid) => total + (bid?.[1] || 0), 0)
 })
 
 const totalAskVolume = computed(() => {
-  return marketStore.orderbook.asks.reduce((total, ask) => total + ask[1], 0)
+  const asks = marketStore.orderbook?.asks || []
+  return asks.reduce((total, ask) => total + (ask?.[1] || 0), 0)
 })
 
 const change1Min = computed(() => {
@@ -159,6 +163,7 @@ const change15Min = computed(() => {
 })
 
 const formatVolume = (volume) => {
+  if (typeof volume !== 'number' || isNaN(volume)) return '0'
   if (volume >= 1000000000) {
     return (volume / 1000000000).toFixed(1) + 'B'
   } else if (volume >= 1000000) {
@@ -175,6 +180,7 @@ const formatTime = (timestamp) => {
 }
 
 const formatChange = (change) => {
+  if (typeof change !== 'number' || isNaN(change)) return '+0.00000'
   const sign = change >= 0 ? '+' : ''
   return `${sign}${change.toFixed(5)}`
 }

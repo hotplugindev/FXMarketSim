@@ -13,7 +13,6 @@ import MarketConfiguration from './components/MarketConfiguration.vue'
 
 const marketStore = useMarketStore()
 const marketEngineStore = useMarketEngineStore()
-const brokerStore = useBrokerStore()
 const isConnected = ref(true) // Always connected since it's client-side
 const activeTab = ref('trading')
 

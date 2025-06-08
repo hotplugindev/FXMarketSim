@@ -55,7 +55,7 @@ const marketStore = useMarketStore()
 const maxRows = 10
 
 const displayAsks = computed(() => {
-  const asks = [...marketStore.orderbook.asks]
+  const asks = Array.isArray(marketStore.orderbook?.asks) ? [...marketStore.orderbook.asks] : []
     .sort((a, b) => a[0] - b[0])
     .slice(0, maxRows)
   
@@ -67,7 +67,7 @@ const displayAsks = computed(() => {
 })
 
 const displayBids = computed(() => {
-  const bids = [...marketStore.orderbook.bids]
+  const bids = Array.isArray(marketStore.orderbook?.bids) ? [...marketStore.orderbook.bids] : []
     .sort((a, b) => b[0] - a[0])
     .slice(0, maxRows)
   
@@ -79,8 +79,9 @@ const displayBids = computed(() => {
 })
 
 const currentSpread = computed(() => {
-  if (displayAsks.value.length === 0 || displayBids.value.length === 0) {
-    return marketStore.currentSpread
+  if (!Array.isArray(displayAsks.value) || !Array.isArray(displayBids.value) ||
+      displayAsks.value.length === 0 || displayBids.value.length === 0) {
+    return marketStore.currentSpread || 0
   }
   
   const lowestAsk = displayAsks.value[displayAsks.value.length - 1][0]
@@ -90,6 +91,7 @@ const currentSpread = computed(() => {
 })
 
 const formatSize = (size) => {
+  if (typeof size !== 'number' || isNaN(size)) return '0'
   if (size >= 1000000) {
     return (size / 1000000).toFixed(1) + 'M'
   } else if (size >= 1000) {
