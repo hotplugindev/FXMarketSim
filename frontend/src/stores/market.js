@@ -1,33 +1,24 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
-import axios from 'axios'
+import { useMarketEngineStore } from './marketEngine'
+import { useBrokerStore } from './brokerStore'
 
 export const useMarketStore = defineStore('market', () => {
+  // Get access to the market engine and broker stores
+  const marketEngineStore = useMarketEngineStore()
+  const brokerStore = useBrokerStore()
+  
   // State
   const selectedSymbol = ref('EURUSD')
   const chartType = ref('line') // 'line' or 'candlestick'
-  
-  const marketPrices = ref({
-    'EURUSD': { bid: 1.0950, ask: 1.0952, timestamp: Date.now(), volume: 0 },
-    'GBPUSD': { bid: 1.2650, ask: 1.2652, timestamp: Date.now(), volume: 0 },
-    'USDJPY': { bid: 149.85, ask: 149.87, timestamp: Date.now(), volume: 0 }
-  })
-  
-  const priceHistories = ref({
-    'EURUSD': { '1m': [], '5m': [], '15m': [], '1h': [], '4h': [], '1d': [] },
-    'GBPUSD': { '1m': [], '5m': [], '15m': [], '1h': [], '4h': [], '1d': [] },
-    'USDJPY': { '1m': [], '5m': [], '15m': [], '1h': [], '4h': [], '1d': [] }
-  })
-  
-  const lastCandleTimestamps = ref({
-    'EURUSD': {},
-    'GBPUSD': {},
-    'USDJPY': {}
-  })
-  
-  const brokers = ref([])
-  const selectedBroker = ref('direct_access')
   const timeframe = ref('1m')
+  
+  // Real-time market data derived from market engine
+  const marketPrices = ref(new Map())
+  const priceHistories = ref({})
+  const lastCandleTimestamps = ref({})
+  
+  // User account and trading
   const account = ref({
     balance: 10000,
     equity: 10000,
@@ -36,30 +27,53 @@ export const useMarketStore = defineStore('market', () => {
     leverage: 100
   })
   
-  const orderbook = ref({
-    bids: [],
-    asks: []
-  })
-  
-  const marketStats = ref({
-    total_volume: 0,
-    total_trades: 0,
-    active_participants: 0,
-    liquidity_index: 0,
-    volatility: 0
-  })
-  
   const positions = ref([])
   const pendingOrders = ref([])
   
+  // Real-time update interval
+  const updateInterval = ref(null)
+  
+  // Initialize price data structures for all symbols
+  const initializePriceData = () => {
+    const symbols = marketEngineStore.config.symbols
+    
+    symbols.forEach(symbol => {
+      if (!priceHistories.value[symbol]) {
+        priceHistories.value[symbol] = {
+          '1m': [], '5m': [], '15m': [], '1h': [], '4h': [], '1d': []
+        }
+      }
+      if (!lastCandleTimestamps.value[symbol]) {
+        lastCandleTimestamps.value[symbol] = {}
+      }
+      if (!marketPrices.value.has(symbol)) {
+        marketPrices.value.set(symbol, {
+          bid: marketEngineStore.config.basePrices[symbol] || 1.0,
+          ask: (marketEngineStore.config.basePrices[symbol] || 1.0) + 0.0002,
+          timestamp: Date.now() / 1000,
+          volume: 0
+        })
+      }
+    })
+  }
+  
   // Computed
   const currentPrice = computed(() => {
-    return marketPrices.value[selectedSymbol.value] || marketPrices.value['EURUSD']
+    const price = marketPrices.value.get(selectedSymbol.value)
+    if (price) return price
+    
+    // Fallback to base price if not found
+    const basePrice = marketEngineStore.config.basePrices[selectedSymbol.value] || 1.0
+    return {
+      bid: basePrice - 0.0001,
+      ask: basePrice + 0.0001,
+      timestamp: Date.now() / 1000,
+      volume: 0
+    }
   })
   
   const priceHistory = computed(() => {
     const history = priceHistories.value[selectedSymbol.value]?.[timeframe.value] || []
-    console.log(`Getting price history for ${selectedSymbol.value} ${timeframe.value}:`, history.length, 'candles')
     return history
   })
   
@@ -68,111 +82,128 @@ export const useMarketStore = defineStore('market', () => {
     return price.ask - price.bid
   })
   
+  const orderbook = computed(() => {
+    const orderBook = marketEngineStore.getOrderBook(selectedSymbol.value)
+    if (!orderBook) return { bids: [], asks: [] }
+    
+    return {
+      bids: orderBook.getBids(10),
+      asks: orderBook.getAsks(10)
+    }
+  })
+  
+  const marketStats = computed(() => {
+    return marketEngineStore.marketStats
+  })
+  
+  const brokers = computed(() => {
+    return brokerStore.brokerList
+  })
+  
+  const selectedBroker = computed(() => {
+    return brokerStore.selectedBroker?.id || null
+  })
+  
   const accountMarginLevel = computed(() => {
     if (account.value.margin_used === 0) return Infinity
     return (account.value.equity / account.value.margin_used) * 100
   })
   
-  const selectedBrokerDetails = computed(() => {
-    return brokers.value.find(b => b.id === selectedBroker.value) || {}
-  })
-  
   // Actions
-  const updateMarketData = (data) => {
-    // Update the specific symbol's price
-    if (marketPrices.value[data.symbol]) {
-      marketPrices.value[data.symbol] = {
-        bid: data.bid,
-        ask: data.ask,
-        timestamp: data.timestamp,
-        volume: data.volume
+  const updateMarketData = () => {
+    // Get current prices from market engine orderbooks
+    marketEngineStore.config.symbols.forEach(symbol => {
+      const orderBook = marketEngineStore.getOrderBook(symbol)
+      if (orderBook) {
+        const bid = orderBook.getBestBid() || marketEngineStore.config.basePrices[symbol] || 1.0
+        const ask = orderBook.getBestAsk() || (bid + 0.0002)
+        const volume = orderBook.getTotalVolume()
+        
+        marketPrices.value.set(symbol, {
+          bid: bid,
+          ask: ask,
+          timestamp: Date.now() / 1000,
+          volume: volume
+        })
+        
+        // Update candles with real-time logic
+        const midPrice = (bid + ask) / 2
+        updateCandleData(symbol, bid, ask, volume, Date.now() / 1000)
       }
-    }
-    
-    if (data.orderbook_snapshot) {
-      orderbook.value = data.orderbook_snapshot
-    }
-    
-    // Initialize symbol data if needed
-    if (!priceHistories.value[data.symbol]) {
-      priceHistories.value[data.symbol] = { '1m': [], '5m': [], '15m': [], '1h': [], '4h': [], '1d': [] }
-    }
-    if (!lastCandleTimestamps.value[data.symbol]) {
-      lastCandleTimestamps.value[data.symbol] = {}
-    }
-    
-    // Update candles with real-time logic
-    updateCandleData(data.symbol, data.bid, data.ask, data.volume, data.timestamp)
+    })
     
     // Update positions with new prices
     updatePositionPrices()
   }
   
-  const fetchBrokers = async () => {
-    try {
-      const response = await axios.get('http://localhost:3001/api/brokers')
-      brokers.value = response.data
-    } catch (error) {
-      console.error('Failed to fetch brokers:', error)
-    }
+  const startRealTimeUpdates = () => {
+    if (updateInterval.value) return
+    
+    updateInterval.value = setInterval(() => {
+      updateMarketData()
+    }, 1000) // Update every second
   }
   
-  const fetchMarketData = async () => {
-    try {
-      // Fetch data for all symbols
-      const symbols = ['EURUSD', 'GBPUSD', 'USDJPY']
-      for (const symbol of symbols) {
-        // Simulate market data for each symbol
-        const basePrice = marketPrices.value[symbol]
-        const variation = (Math.random() - 0.5) * 0.0010 // Small random variation
-        const bid = basePrice.bid + variation
-        const ask = bid + (symbol === 'USDJPY' ? 0.02 : 0.0002) // Different spreads
-        
-        updateMarketData({
-          symbol: symbol,
-          bid: bid,
-          ask: ask,
-          timestamp: Date.now() / 1000,
-          volume: Math.floor(Math.random() * 1000000)
-        })
-      }
-    } catch (error) {
-      console.error('Failed to fetch market data:', error)
+  const stopRealTimeUpdates = () => {
+    if (updateInterval.value) {
+      clearInterval(updateInterval.value)
+      updateInterval.value = null
     }
   }
   
   const placeTrade = async (tradeData) => {
     try {
+      // Get selected broker
+      const broker = brokerStore.selectedBroker
+      if (!broker) {
+        return { success: false, error: 'No broker selected' }
+      }
+      
       // Calculate required margin
       const price = currentPrice.value
       const entryPrice = tradeData.side === 'Buy' ? price.ask : price.bid
-      const marginRequired = (tradeData.amount * entryPrice) / account.value.leverage
+      const marginRequired = broker.getMarginRequirement(tradeData.symbol, tradeData.amount, account.value.leverage)
       
       // Check if enough margin available
       if (marginRequired > account.value.free_margin) {
         return { success: false, error: 'Insufficient margin' }
       }
       
-      // Create position
-      const position = {
-        id: Date.now() + Math.random(),
-        symbol: tradeData.symbol,
-        side: tradeData.side,
-        volume: tradeData.amount,
-        entry_price: entryPrice,
-        current_price: entryPrice,
-        unrealized_pnl: 0,
-        margin_required: marginRequired,
-        timestamp: new Date().toISOString()
+      // Place order in market engine
+      try {
+        const orderId = await marketEngineStore.placeOrder(
+          tradeData.symbol,
+          tradeData.side,
+          tradeData.amount,
+          'user_trader', // User participant ID
+          'Market',
+          entryPrice
+        )
+        
+        // Create position
+        const position = {
+          id: orderId,
+          symbol: tradeData.symbol,
+          side: tradeData.side,
+          volume: tradeData.amount,
+          entry_price: entryPrice,
+          current_price: entryPrice,
+          unrealized_pnl: 0,
+          margin_required: marginRequired,
+          timestamp: new Date().toISOString()
+        }
+        
+        // Add position and update account
+        positions.value.push(position)
+        account.value.margin_used += marginRequired
+        account.value.free_margin -= marginRequired
+        
+        updateAccountInfo()
+        return { success: true, data: position }
+      } catch (engineError) {
+        console.error('Market engine order failed:', engineError)
+        return { success: false, error: 'Order execution failed' }
       }
-      
-      // Add position and update account
-      positions.value.push(position)
-      account.value.margin_used += marginRequired
-      account.value.free_margin -= marginRequired
-      
-      updateAccountInfo()
-      return { success: true, data: position }
     } catch (error) {
       console.error('Failed to place trade:', error)
       return { success: false, error: error.message }
@@ -186,6 +217,14 @@ export const useMarketStore = defineStore('market', () => {
     account.value.equity = account.value.balance + totalPnL
     account.value.margin_used = totalMargin
     account.value.free_margin = account.value.equity - account.value.margin_used
+    
+    // Keep user participant in sync
+    const userParticipant = marketEngineStore.getUserParticipant()
+    if (userParticipant) {
+      userParticipant.balance = account.value.balance
+      userParticipant.marginUsed = account.value.margin_used
+      userParticipant.updateEquity()
+    }
   }
   
   const setTimeframe = (tf) => {
@@ -194,7 +233,7 @@ export const useMarketStore = defineStore('market', () => {
   }
   
   const setSelectedBroker = (brokerId) => {
-    selectedBroker.value = brokerId
+    brokerStore.selectBroker(brokerId)
   }
   
   const setSelectedSymbol = (symbol) => {
@@ -211,6 +250,9 @@ export const useMarketStore = defineStore('market', () => {
     account.value.balance = balance
     account.value.equity = balance + positions.value.reduce((sum, pos) => sum + pos.unrealized_pnl, 0)
     account.value.free_margin = account.value.equity - account.value.margin_used
+    
+    // Update user participant in market engine
+    marketEngineStore.updateUserBalance(balance)
   }
   
   const addPosition = (position) => {
@@ -252,7 +294,7 @@ export const useMarketStore = defineStore('market', () => {
   
   const updatePositionPrices = () => {
     positions.value.forEach(position => {
-      const symbolPrice = marketPrices.value[position.symbol]
+      const symbolPrice = marketPrices.value.get(position.symbol)
       if (symbolPrice) {
         const currentPrice = (symbolPrice.bid + symbolPrice.ask) / 2
         position.current_price = currentPrice
@@ -281,6 +323,16 @@ export const useMarketStore = defineStore('market', () => {
       '1d': 86400
     }
     
+    // Ensure price history exists for this symbol
+    if (!priceHistories.value[symbol]) {
+      priceHistories.value[symbol] = {
+        '1m': [], '5m': [], '15m': [], '1h': [], '4h': [], '1d': []
+      }
+    }
+    if (!lastCandleTimestamps.value[symbol]) {
+      lastCandleTimestamps.value[symbol] = {}
+    }
+    
     Object.entries(timeframes).forEach(([tf, seconds]) => {
       // Round timestamp to the timeframe interval
       const roundedTimestamp = Math.floor(timestamp / seconds) * seconds
@@ -297,7 +349,7 @@ export const useMarketStore = defineStore('market', () => {
           high: midPrice,
           low: midPrice,
           close: midPrice,
-          volume: volume
+          volume: volume || 0
         }
         tfData.push(newCandle)
         
@@ -308,13 +360,12 @@ export const useMarketStore = defineStore('market', () => {
         }
         
         lastCandleTimestamps.value[symbol][tf] = roundedTimestamp
-        console.log(`New ${tf} candle for ${symbol} at ${new Date(roundedTimestamp * 1000).toLocaleTimeString()}`)
       } else {
         // Update existing candle
         lastCandle.high = Math.max(lastCandle.high, midPrice)
         lastCandle.low = Math.min(lastCandle.low, midPrice)
         lastCandle.close = midPrice
-        lastCandle.volume += volume
+        lastCandle.volume += volume || 0
       }
     })
   }
@@ -325,7 +376,7 @@ export const useMarketStore = defineStore('market', () => {
   }
   
   const generateHigherTimeframes = (symbol) => {
-    const oneMinData = priceHistories.value[symbol]['1m']
+    const oneMinData = priceHistories.value[symbol]?.['1m'] || []
     if (oneMinData.length === 0) return
     
     const timeframes = {
@@ -358,46 +409,132 @@ export const useMarketStore = defineStore('market', () => {
             high: Math.max(...candles.map(c => c.high)),
             low: Math.min(...candles.map(c => c.low)),
             close: candles[candles.length - 1].close,
-            volume: candles.reduce((sum, c) => sum + c.volume, 0)
+            volume: candles.reduce((sum, c) => sum + (c.volume || 0), 0)
           }
           aggregated.push(aggregatedCandle)
         }
       })
       
       // Sort by timestamp and store
+      if (!priceHistories.value[symbol]) {
+        priceHistories.value[symbol] = { '1m': [], '5m': [], '15m': [], '1h': [], '4h': [], '1d': [] }
+      }
       priceHistories.value[symbol][tf] = aggregated.sort((a, b) => a.timestamp - b.timestamp)
-      console.log(`Generated ${aggregated.length} ${tf} candles for ${symbol}`)
     })
+  }
+  
+  // Initialize market data when market engine is ready
+  const initializeMarketData = () => {
+    // Initialize brokers if needed
+    if (brokerStore.brokerList.length === 0) {
+      brokerStore.initializeDefaultBrokers()
+    }
+    
+    // Initialize market engine if needed
+    if (marketEngineStore.symbols.size === 0) {
+      marketEngineStore.initializeMarket()
+    }
+    
+    // Sync user account with market engine user participant
+    const userParticipant = marketEngineStore.getUserParticipant()
+    if (userParticipant) {
+      account.value.balance = userParticipant.balance
+      account.value.equity = userParticipant.equity
+      account.value.leverage = userParticipant.leverage
+      updateAccountInfo()
+    }
+    
+    // Initialize price data structures
+    initializePriceData()
+    
+    // Generate some initial historical data
+    generateInitialHistory()
+    
+    // Start real-time updates
+    startRealTimeUpdates()
+  }
+  
+  const generateInitialHistory = () => {
+    marketEngineStore.config.symbols.forEach(symbol => {
+      const basePrice = marketEngineStore.config.basePrices[symbol] || 1.0
+      const history = []
+      let currentPrice = basePrice
+      
+      // Generate 100 historical 1-minute candles
+      const now = Date.now()
+      const minuteMs = 60 * 1000
+      
+      for (let i = 0; i < 100; i++) {
+        const candleTime = now - (100 - i) * minuteMs
+        const alignedTime = Math.floor(candleTime / minuteMs) * minuteMs
+        const timestamp = Math.floor(alignedTime / 1000)
+        
+        // Create realistic price movement
+        const variation = (Math.random() - 0.5) * 0.0010
+        const open = currentPrice
+        const volatility = symbol === 'USDJPY' ? 0.05 : 0.0005
+        
+        const high = open + Math.random() * volatility
+        const low = open - Math.random() * volatility
+        const close = open + variation
+        
+        currentPrice = close
+        
+        const candle = {
+          timestamp: timestamp,
+          open: Number(open.toFixed(symbol === 'USDJPY' ? 3 : 5)),
+          high: Number(Math.max(open, high, close).toFixed(symbol === 'USDJPY' ? 3 : 5)),
+          low: Number(Math.min(open, low, close).toFixed(symbol === 'USDJPY' ? 3 : 5)),
+          close: Number(close.toFixed(symbol === 'USDJPY' ? 3 : 5)),
+          volume: Math.floor(Math.random() * 1000000) + 50000
+        }
+        
+        history.push(candle)
+      }
+      
+      priceHistories.value[symbol]['1m'] = history
+      generateHigherTimeframes(symbol)
+    })
+  }
+  
+  // Watch for market engine changes
+  watch(() => marketEngineStore.isRunning, (isRunning) => {
+    if (isRunning) {
+      startRealTimeUpdates()
+    } else {
+      stopRealTimeUpdates()
+    }
+  })
+  
+  // Cleanup on component unmount
+  const cleanup = () => {
+    stopRealTimeUpdates()
   }
   
   return {
     // State
     selectedSymbol,
     chartType,
-    marketPrices,
-    priceHistories,
-    lastCandleTimestamps,
-    brokers,
-    selectedBroker,
     timeframe,
     account,
-    orderbook,
-    marketStats,
     positions,
     pendingOrders,
+    priceHistories,
+    lastCandleTimestamps,
     
     // Computed
     currentPrice,
     priceHistory,
     currentSpread,
+    orderbook,
+    marketStats,
+    brokers,
+    selectedBroker,
     accountMarginLevel,
-    selectedBrokerDetails,
     
     // Actions
     updateMarketData,
     updateCandleData,
-    fetchBrokers,
-    fetchMarketData,
     placeTrade,
     updateAccountInfo,
     setTimeframe,
@@ -408,7 +545,14 @@ export const useMarketStore = defineStore('market', () => {
     addPosition,
     closePosition,
     updatePositionPrices,
-    aggregateTimeframes,
-    generateHigherTimeframes
+    generateHigherTimeframes,
+    initializeMarketData,
+    startRealTimeUpdates,
+    stopRealTimeUpdates,
+    cleanup,
+    
+    // Access to stores
+    marketEngineStore,
+    brokerStore
   }
 })

@@ -5,9 +5,13 @@
         <h3>{{ marketStore.selectedSymbol }} Price Chart</h3>
         <div class="chart-controls">
           <select v-model="selectedSymbol" @change="updateSymbol" class="symbol-selector">
-            <option value="EURUSD">EUR/USD</option>
-            <option value="GBPUSD">GBP/USD</option>
-            <option value="USDJPY">USD/JPY</option>
+            <option
+              v-for="symbol in availableSymbols"
+              :key="symbol"
+              :value="symbol"
+            >
+              {{ symbol.slice(0, 3) }}/{{ symbol.slice(3) }}
+            </option>
           </select>
           <div class="chart-type-selector">
             <button
@@ -100,6 +104,7 @@ ChartJS.register(
 
 const marketStore = useMarketStore()
 const selectedSymbol = ref(marketStore.selectedSymbol)
+const availableSymbols = computed(() => marketStore.marketEngineStore.config.symbols)
 const candlestickCanvas = ref(null)
 const candlestickChart = ref(null)
 const updateInterval = ref(null)

@@ -7,7 +7,7 @@
         <label>Select Broker:</label>
         <select v-model="selectedBroker" @change="updateBroker" class="form-control">
           <option
-            v-for="broker in marketStore.brokers"
+            v-for="broker in availableBrokers"
             :key="broker.id"
             :value="broker.id"
           >
@@ -19,7 +19,7 @@
       <div v-if="currentBroker" class="broker-details">
         <div class="detail-item">
           <span class="label">Type:</span>
-          <span class="value">{{ currentBroker.broker_type }}</span>
+          <span class="value">{{ currentBroker.brokerType }}</span>
         </div>
         <div class="detail-item">
           <span class="label">Spread:</span>
@@ -28,6 +28,18 @@
         <div class="detail-item">
           <span class="label">Commission:</span>
           <span class="value">${{ currentBroker.commission.toFixed(2) }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="label">Max Leverage:</span>
+          <span class="value">1:{{ currentBroker.maxLeverage }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="label">Execution Model:</span>
+          <span class="value">{{ currentBroker.executionModel }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="label">Available Symbols:</span>
+          <span class="value">{{ currentBroker.availableSymbols?.length || 0 }} pairs</span>
         </div>
       </div>
     </div>
@@ -72,21 +84,27 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useMarketStore } from '../stores/market'
+import { useBrokerStore } from '../stores/brokerStore'
 
 const marketStore = useMarketStore()
-const selectedBroker = ref(marketStore.selectedBroker)
+const brokerStore = useBrokerStore()
+const selectedBroker = ref(brokerStore.selectedBrokerId)
 
 const currentBroker = computed(() => {
-  return marketStore.brokers.find(broker => broker.id === selectedBroker.value)
+  return brokerStore.selectedBroker
+})
+
+const availableBrokers = computed(() => {
+  return brokerStore.brokerList
 })
 
 const updateBroker = () => {
-  marketStore.setSelectedBroker(selectedBroker.value)
+  brokerStore.selectBroker(selectedBroker.value)
 }
 
 // Watch for changes in the store
-watch(() => marketStore.selectedBroker, (newBroker) => {
-  selectedBroker.value = newBroker
+watch(() => brokerStore.selectedBrokerId, (newBrokerId) => {
+  selectedBroker.value = newBrokerId
 })
 </script>
 

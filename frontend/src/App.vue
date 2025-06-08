@@ -1,126 +1,51 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useMarketStore } from './stores/market'
+import { useMarketEngineStore } from './stores/marketEngine'
+import { useBrokerStore } from './stores/brokerStore'
 import TradingInterface from './components/TradingInterface.vue'
 import PriceChart from './components/PriceChart.vue'
 import OrderBook from './components/OrderBook.vue'
 import MarketData from './components/MarketData.vue'
 import BrokerSelector from './components/BrokerSelector.vue'
 import AccountInfo from './components/AccountInfo.vue'
+import MarketConfiguration from './components/MarketConfiguration.vue'
 
 const marketStore = useMarketStore()
-const ws = ref(null)
-const isConnected = ref(false)
+const marketEngineStore = useMarketEngineStore()
+const brokerStore = useBrokerStore()
+const isConnected = ref(true) // Always connected since it's client-side
 const activeTab = ref('trading')
 
 onMounted(() => {
-  connectWebSocket()
-  fetchInitialData()
+  initializeMarket()
 })
 
 onUnmounted(() => {
-  if (ws.value) {
-    ws.value.close()
-  }
+  marketStore.cleanup()
 })
 
-const connectWebSocket = () => {
-  try {
-    // Simulate WebSocket connection for demo
-    isConnected.value = true
-    console.log('WebSocket connected (simulated)')
-    
-    // Start simulated price feed
-    startPriceFeed()
-  } catch (error) {
-    console.error('Failed to connect WebSocket:', error)
-  }
-}
-
-const startPriceFeed = () => {
-  // Simulate real-time price updates
-  setInterval(() => {
-    const symbols = ['EURUSD', 'GBPUSD', 'USDJPY']
-    
-    symbols.forEach(symbol => {
-      // Get base prices
-      const basePrices = {
-        'EURUSD': { bid: 1.0950, ask: 1.0952 },
-        'GBPUSD': { bid: 1.2650, ask: 1.2652 },
-        'USDJPY': { bid: 149.85, ask: 149.87 }
-      }
-      
-      // Add random variation
-      const variation = (Math.random() - 0.5) * 0.0020
-      const spread = symbol === 'USDJPY' ? 0.02 : 0.0002
-      
-      const bid = basePrices[symbol].bid + variation
-      const ask = bid + spread
-      
-      const data = {
-        symbol: symbol,
-        bid: bid,
-        ask: ask,
-        timestamp: Date.now() / 1000,
-        volume: Math.floor(Math.random() * 1000000),
-        orderbook_snapshot: {
-          bids: generateOrderBookSide(bid, false),
-          asks: generateOrderBookSide(ask, true)
-        }
-      }
-      
-      marketStore.updateMarketData(data)
-    })
-  }, 1000)
-}
-
-const generateOrderBookSide = (basePrice, isAsk) => {
-  const orders = []
-  for (let i = 0; i < 10; i++) {
-    const priceOffset = isAsk ? i * 0.0001 : -i * 0.0001
-    const price = basePrice + priceOffset
-    const volume = Math.floor(Math.random() * 500000) + 100000
-    orders.push([price, volume])
-  }
-  return orders
-}
-
-const fetchInitialData = async () => {
-  await marketStore.fetchBrokers()
-  await marketStore.fetchMarketData()
+const initializeMarket = async () => {
+  console.log('Initializing comprehensive market simulation...')
   
-  // Initialize some sample broker data if none exist
-  if (marketStore.brokers.length === 0) {
-    marketStore.brokers.push(
-      {
-        id: 'direct_access',
-        name: 'Direct Access',
-        broker_type: 'Direct Access',
-        spread: 0.0001,
-        commission: 0
-      },
-      {
-        id: 'ecn_broker',
-        name: 'ECN Pro',
-        broker_type: 'ECN Broker',
-        spread: 0.0000,
-        commission: 3.50
-      },
-      {
-        id: 'market_maker',
-        name: 'Market Maker',
-        broker_type: 'Market Maker',
-        spread: 0.0003,
-        commission: 0
-      }
-    )
+  try {
+    // Initialize market data and start simulation
+    marketStore.initializeMarketData()
+    
+    // Start the market engine simulation
+    setTimeout(() => {
+      marketEngineStore.startSimulation()
+    }, 1000)
+    
+    console.log('Market simulation initialized successfully')
+  } catch (error) {
+    console.error('Failed to initialize market:', error)
   }
 }
 
 const setActiveTab = (tab) => {
   activeTab.value = tab
-}
-</script>
+}</script>
 
 <template>
   <div id="app">
@@ -145,6 +70,12 @@ const setActiveTab = (tab) => {
           :class="['nav-btn', { active: activeTab === 'analysis' }]"
         >
           Market Analysis
+        </button>
+        <button 
+          @click="setActiveTab('configuration')"
+          :class="['nav-btn', { active: activeTab === 'configuration' }]"
+        >
+          Configuration
         </button>
       </nav>
     </header>
@@ -173,6 +104,11 @@ const setActiveTab = (tab) => {
             <OrderBook />
           </div>
         </div>
+      </div>
+
+      <!-- Configuration Page -->
+      <div v-if="activeTab === 'configuration'" class="configuration-page">
+        <MarketConfiguration />
       </div>
     </main>
   </div>
@@ -304,6 +240,13 @@ const setActiveTab = (tab) => {
   max-width: 100vw;
 }
 
+/* Configuration Page Layout */
+.configuration-page {
+  height: 100%;
+  overflow-y: auto;
+  max-width: 100vw;
+}
+
 .analysis-grid {
   display: grid;
   grid-template-columns: 1fr 450px;
@@ -375,6 +318,10 @@ const setActiveTab = (tab) => {
   .analysis-grid {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr 1fr;
+  }
+  
+  .configuration-page {
+    padding: 0;
   }
   
   .app-main {

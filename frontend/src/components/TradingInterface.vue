@@ -6,9 +6,9 @@
       <div class="form-group">
         <label>Symbol</label>
         <select v-model="selectedSymbol" class="form-control">
-          <option value="EURUSD">EUR/USD</option>
-          <option value="GBPUSD">GBP/USD</option>
-          <option value="USDJPY">USD/JPY</option>
+          <option v-for="symbol in availableSymbols" :key="symbol" :value="symbol">
+            {{ symbol.slice(0, 3) }}/{{ symbol.slice(3) }}
+          </option>
         </select>
       </div>
       
@@ -31,8 +31,9 @@
           <option value="10">1:10</option>
           <option value="50">1:50</option>
           <option value="100">1:100</option>
-          <option value="200">1:200</option>
-          <option value="500">1:500</option>
+          <option v-if="maxLeverage >= 200" value="200">1:200</option>
+          <option v-if="maxLeverage >= 500" value="500">1:500</option>
+          <option v-if="maxLeverage >= 1000" value="1000">1:1000</option>
         </select>
       </div>
       
@@ -48,6 +49,14 @@
         <div class="price-item">
           <span class="label">Spread:</span>
           <span class="spread">{{ marketStore.currentSpread.toFixed(5) }}</span>
+        </div>
+        <div v-if="tradingCosts" class="price-item">
+          <span class="label">Commission:</span>
+          <span class="commission">${{ tradingCosts.commission.toFixed(2) }}</span>
+        </div>
+        <div v-if="tradingCosts" class="price-item">
+          <span class="label">Margin Required:</span>
+          <span class="margin">${{ tradingCosts.marginRequired.toFixed(2) }}</span>
         </div>
       </div>
       
@@ -113,8 +122,10 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useMarketStore } from '../stores/market'
+import { useBrokerStore } from '../stores/brokerStore'
 
 const marketStore = useMarketStore()
+const brokerStore = useBrokerStore()
 
 const selectedSymbol = ref(marketStore.selectedSymbol)
 const tradeSize = ref(1.0)
@@ -126,18 +137,70 @@ watch(selectedSymbol, (newSymbol) => {
   marketStore.setSelectedSymbol(newSymbol)
 })
 
+// Watch for broker changes
+watch(() => brokerStore.selectedBroker, (newBroker) => {
+  if (newBroker) {
+    // Update available symbols based on broker
+    const availableSymbols = newBroker.availableSymbols || ['EURUSD', 'GBPUSD', 'USDJPY']
+    if (!availableSymbols.includes(selectedSymbol.value)) {
+      selectedSymbol.value = availableSymbols[0]
+      marketStore.setSelectedSymbol(availableSymbols[0])
+    }
+  }
+})
+
 const canTrade = computed(() => {
-  return tradeSize.value > 0 && marketStore.account.free_margin > 0
+  const broker = brokerStore.selectedBroker
+  if (!broker) return false
+  
+  return tradeSize.value > 0 && 
+         marketStore.account.free_margin > 0 &&
+         tradeSize.value >= broker.minTradeSize &&
+         tradeSize.value <= broker.maxTradeSize &&
+         broker.availableSymbols.includes(selectedSymbol.value)
+})
+
+const availableSymbols = computed(() => {
+  const broker = brokerStore.selectedBroker
+  return broker ? broker.availableSymbols : ['EURUSD', 'GBPUSD', 'USDJPY']
+})
+
+const maxLeverage = computed(() => {
+  const broker = brokerStore.selectedBroker
+  return broker ? broker.maxLeverage : 100
+})
+
+const tradingCosts = computed(() => {
+  const broker = brokerStore.selectedBroker
+  if (!broker) return null
+  
+  return brokerStore.calculateTradingCosts(
+    broker.id,
+    selectedSymbol.value,
+    'Buy', // Default to buy for calculation
+    tradeSize.value,
+    leverage.value
+  )
 })
 
 const placeTrade = async (side) => {
   if (!canTrade.value) return
+  
+  const broker = brokerStore.selectedBroker
+  if (!broker) {
+    tradeMessage.value = {
+      type: 'error',
+      text: 'No broker selected'
+    }
+    return
+  }
     
   const tradeData = {
     symbol: selectedSymbol.value,
     side: side,
     amount: tradeSize.value,
-    leverage: leverage.value
+    leverage: leverage.value,
+    brokerId: broker.id
   }
     
   try {
@@ -260,6 +323,16 @@ const closePosition = (positionId) => {
 
 .spread {
   color: #ffd93d;
+  font-weight: 600;
+}
+
+.commission {
+  color: #ff9800;
+  font-weight: 600;
+}
+
+.margin {
+  color: #9c27b0;
   font-weight: 600;
 }
 
